@@ -1,0 +1,242 @@
+     # ---
+# - name: Install and Configure Nginx for Static Website
+#   hosts: nginx
+#   become: yes
+#   vars:
+#     ansible_user: ubuntu
+#     site_root: /var/www/html
+#     local_site_files:
+#       - src: /Users/snehatuladhar/Desktop/Ansible/index.html
+#         dest: index.html
+#       - src: /Users/snehatuladhar/Desktop/Ansible/styles.css
+#         dest: styles.css
+#       - src: /Users/snehatuladhar/Desktop/Ansible/image.jpg
+#         dest: image.jpg
+
+#   tasks:
+#     - name: Ensure Nginx is installed
+#       apt:
+#         name: nginx
+#         state: present
+
+#     - name: Ensure Nginx is running
+#       service:
+#         name: nginx
+#         state: started
+#         enabled: yes
+
+#     - name: Remove default content from web root
+#       file:
+#         path: "{{ site_root }}"
+#         state: absent
+#         force: yes
+
+#     - name: Create web root directory
+#       file:
+#         path: "{{ site_root }}"
+#         state: directory
+#         owner: www-data
+#         group: www-data
+#         mode: '0755'
+
+#     - name: Upload static site files
+#       copy:
+#         src: "{{ item.src }}"
+#         dest: "{{ site_root }}/{{ item.dest }}"
+#         owner: www-data
+#         group: www-data
+#         mode: '0644'
+#       loop: "{{ local_site_files }}"
+
+#     - name: Ensure Nginx is restarted
+#       service:
+#         name: nginx
+#         state: restarted
+#         enabled: yes
+---
+- name: Hosting Dynamic Website From Ansible
+  hosts: nginx
+  become: true
+  gather_facts: false
+  vars: 
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+  # - name: Update
+  #   apt:
+  #     update_cache: yes
+  #     cache_valid_time: 86400
+    
+  # # # - name: Upgrade
+  # # #   apt:
+  # # #     upgrade: dist
+
+  - name: Install net-tools
+    apt:
+      name: net-tools
+      state: present
+  
+  # # - name: Install Nginx
+  # #   apt:
+  # #     name: nginx
+  # #     state: present
+
+  # # - name: Create Nginx configuration for Node.js applications
+  # #   copy:
+  # #     dest: /etc/nginx/sites-available/nodejs
+  # #     content: |
+  # #       server {
+  # #           listen 80 default_server;
+  # #           listen [::]:80 default_server;
+
+  # #           server_name _;
+
+  # #           location / {
+  # #               proxy_pass http://localhost:5173;  # Adjust port as necessary for your frontend
+  # #           }
+  # #       }
+
+  # # - name: Enable Nginx site configuration
+  # #   file:
+  # #     src: /etc/nginx/sites-available/nodejs
+  # #     dest: /etc/nginx/sites-enabled/nodejs
+  # #     state: link
+
+  # # - name: Remove default Nginx configuration
+  # #   file:
+  # #     path: /etc/nginx/sites-enabled/default
+  # #     state: absent
+
+  # # - name: Test Nginx configuration
+  # #   command: nginx -t
+
+  # # - name: Reload Nginx
+  # #   service:
+  # #     name: nginx
+  # #     state: reloaded
+
+  - name: Ensure git is present
+    apt:
+      name: git
+      state: present
+
+  - name: Git clone
+    ansible.builtin.git:
+      repo: "https://github.com/SameepSig/Node_React_CRUD.git"
+      dest: /home/ubuntu/Node_Project
+      force: yes
+
+  - name: Creating backend .env file
+    copy:
+      dest: /home/ubuntu/Node_Project/backend/.env
+      content: |
+        APP_PORT=3000  
+
+        ### DB_HOST could be remote host, proxy or localhost URL but must me mysql
+        DB_HOST= localhost
+        DB_PORT=3306
+        DB_NAME=test_db
+
+        CRED= from_env
+
+        ### If you are Passing Credentials Directly from ENV
+        DB_USER= test_user
+        DB_PASSWORD= test_0000
+
+  - name: Creating frontend .env file
+    copy:
+      dest: /home/ubuntu/Node_Project/frontend/.env
+      content: |
+        VITE_API_URL=http://35.170.64.106:3000
+    
+  - name: Ensure Node.js is installed
+    apt:
+      name: nodejs
+      state: present
+      update_cache: yes
+
+  - name: Ensure npm is installed
+    apt:
+      name: npm
+      state: present
+      update_cache: yes
+
+  - name: Install pm2 globally
+    npm:
+      name: pm2
+      global: yes
+      state: present
+
+  - name: Install frontend dependencies
+    command: npm install
+    args:
+      chdir: /home/ubuntu/Node_Project/frontend
+
+  - name: Install backend dependencies
+    command: npm install
+    args:
+      chdir: /home/ubuntu/Node_Project/backend
+
+  - name: Install MySQL-python dependencies
+    apt:
+      name:
+          - libmysqlclient-dev
+          - python3-mysqldb
+      state: present
+
+  - name: Remove frontend and backend server if created using pm2 to avoid port conflict
+    command: pm2 delete frontend backend
+    ignore_errors: yes
+
+  - name: Start frontend server with pm2
+    command: pm2 start npm --name frontend -- run dev
+    args:
+      chdir: /home/ubuntu/Node_Project/frontend
+
+  - name: Start backend server with pm2
+    command: pm2 start index.js --name backend -f
+    args:
+      chdir: /home/ubuntu/Node_Project/backend
+
+  - name: Save pm2 process list to start on boot
+    command: pm2 save
+
+  - name: Update cache
+    apt:
+      update_cache: yes
+  - name: Installing MySQL-server
+    apt:
+      name: mysql-server
+      state: present
+
+  - name: Start MySQL service
+    service:
+      name: mysql
+      state: started
+      enabled: yes
+
+  - name: Install MySQL-python dependencies
+    apt:
+      name: 
+        - libmysqlclient-dev
+        - python3-mysqldb
+      state: present  
+
+  - name: Create MySQL user
+    mysql_user:
+      name: test_user
+      password: test_0000
+      priv: "*.*:ALL"
+      host: localhost
+      state: present
+
+  - name: Create database
+    mysql_db:
+      name: test_db
+      state: present
+
+  - name: Restore database
+    mysql_db:
+      name: test_db
+      state: import
+      target: /home/ubuntu/Node_Project/db.sql
